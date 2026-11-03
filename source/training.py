@@ -28,3 +28,6 @@ import torchvision.transforms as transforms
 import boto3
 from botocore.config import Config
 from botocore import UNSIGNED
+
+if __name__ == "__main__":
+    pass
