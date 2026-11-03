@@ -41,6 +41,7 @@ from botocore.config import Config
 from botocore import UNSIGNED
 # IMPORTS END
 
+
 # CLASSES START
 class GlassVialDataset(Dataset):
     """Loads vial images and their labels and applies the transform."""
@@ -68,6 +69,7 @@ class GlassVialDataset(Dataset):
             image = self.transform(image)
 
         return image, label
+
 
 class SimpleCNN(nn.Module):
     """
@@ -111,6 +113,7 @@ class SimpleCNN(nn.Module):
         return x
 # CLASSES END
 
+
 # FUNCTIONS START
 def setup_mlflow_tracking(experiment_name=None):
     """Point MLflow at the local state dir and create the experiment if needed."""
@@ -125,6 +128,7 @@ def setup_mlflow_tracking(experiment_name=None):
         mlflow.create_experiment(experiment_name, artifact_location=mlflow_artifact_location)
     mlflow.set_experiment(experiment_name)
 
+
 def _setup_s3_client():
     """Create a boto3 S3 client configured for Hetzner's public bucket."""
     return boto3.client(
@@ -134,6 +138,7 @@ def _setup_s3_client():
         aws_secret_access_key='',
         config=Config(signature_version=UNSIGNED)
     )
+
 
 def _download_file_with_boto3(s3_client, key, output_path):
     """Download a single file from S3 using boto3."""
@@ -147,10 +152,12 @@ def _download_file_with_boto3(s3_client, key, output_path):
         print(f"Failed to download {key}: {e}")
         return False
 
+
 def _get_s3_key_from_url(url):
     # URL format: https://itudsip.hel1.your-objectstorage.com/data/images/metadata.csv
     # Bucket: data, Key: images/metadata.csv
     return url.replace(f"{S3_ENDPOINT}/{S3_BUCKET}/", "")
+
 
 def download_with_dvc(url, out_path):
     """Download a single file (DVC-compatible interface)."""
@@ -162,6 +169,7 @@ def download_with_dvc(url, out_path):
     key = _get_s3_key_from_url(url)
     s3_client.download_file(S3_BUCKET, key, str(out_path))
     print(f"Downloaded {url} to {out_path}")
+
 
 def download_files_from_metadata(metadata_path, output_dir, prefix=""):
     """Download all files listed in a metadata csv from the object store."""
@@ -197,11 +205,13 @@ def download_files_from_metadata(metadata_path, output_dir, prefix=""):
 
     print(f"Downloaded {downloaded_count} images, skipped {skipped_count} existing, failed {failed_count}")
 
+
 def pull_data_from_dvc():
     """Pull the training and test images listed in the metadata from the object store."""
     download_files_from_metadata("data/images/metadata.csv", "data/images/raw", "images/raw/")
     download_files_from_metadata("data/test/metadata.csv", "data/test", "test/")
     
+
 def load_image_dataset():
     """Load (image_path, label) pairs from the raw images and the metadata."""
     print(f"Loading image dataset from {image_data_dir}")
@@ -230,14 +240,17 @@ def load_image_dataset():
 
     return image_dataset
 
+
 def count_classes(labels):
     unique, counts = np.unique(labels, return_counts=True)
     return dict(zip(unique, counts))
+
 
 def print_section_header(title):
     print("\n" + "=" * 50)
     print(title)
     print("=" * 50)
+
 
 def calculate_image_statistics(data_loader):
     """Calculate mean and standard deviation per channel for a dataset."""
@@ -271,6 +284,7 @@ def calculate_image_statistics(data_loader):
         "total_samples": total_samples,
     }
     
+
 def define_transforms():
     print("Defining image transforms...")
 
@@ -294,6 +308,7 @@ def define_transforms():
     print("Training transforms: Resize, flip, rotation, jitter, ToTensor, Normalize")
     print("Validation transforms: Resize, ToTensor, Normalize")
     return train_transforms, val_transforms
+
 
 def split_dataset(image_dataset, train_ratio=0.70, val_ratio=0.15, test_ratio=0.15, random_seed=42):
     """Stratified split so both classes keep the same balance in every set."""
@@ -343,6 +358,7 @@ def split_dataset(image_dataset, train_ratio=0.70, val_ratio=0.15, test_ratio=0.
 
     return train_dataset, val_dataset, test_dataset
 
+
 def create_dataloaders(train_dataset, val_dataset, test_dataset, batch_size=batch_size):
     print(f"\nCreating DataLoaders with batch_size={batch_size}...")
 
@@ -365,6 +381,7 @@ def create_dataloaders(train_dataset, val_dataset, test_dataset, batch_size=batc
     print(f"  Test: {len(test_loader)} batches")
 
     return train_loader, val_loader, test_loader
+
 
 def train_cnn_model(train_loader, val_loader, num_epochs=num_epochs, learning_rate=learning_rate, device=device, random_seed=random_state):
     """Train the SimpleCNN model on glass vial images."""
@@ -524,6 +541,7 @@ def train_cnn_model(train_loader, val_loader, num_epochs=num_epochs, learning_ra
 
     return model, history
 
+
 def evaluate_cnn_model(model, test_loader, device=device, threshold=threshold):
     """Evaluate the model on the test set: accuracy, F1, precision, recall, ROC-AUC."""
     print(f"\n{'='*60}")
@@ -594,6 +612,7 @@ def evaluate_cnn_model(model, test_loader, device=device, threshold=threshold):
         'confusion_matrix': conf_matrix.tolist(),
         'classification_report': class_report,
     }
+
     
 def tune_threshold(model, val_loader, device=device, threshold_range=None):
     """Tune the classification threshold to maximize macro F1 on the validation set.
@@ -649,6 +668,332 @@ def tune_threshold(model, val_loader, device=device, threshold_range=None):
     mlflow.log_metric("optimal_threshold_macro_f1", best_f1)
 
     return best_threshold
+
+def compute_baseline_statistics(model, data_loader, device=device, feature_layer="fc1", threshold=threshold):
+    """Compute baseline statistics for drift detection from a dataset."""
+    print(f"\nComputing baseline statistics for drift detection...")
+    print(f"Feature layer: {feature_layer}")
+
+    model.eval()
+
+    image_means = []
+    image_stds = []
+    class_counts = {0: 0, 1: 0}
+    prediction_counts = {0: 0, 1: 0}
+    confidences = []
+    all_embeddings = []
+
+    # Get the feature extraction layer
+    if hasattr(model, feature_layer):
+        feature_extractor = getattr(model, feature_layer)
+    else:
+        raise ValueError(f"Model does not have layer '{feature_layer}'")
+
+    # Hook to capture embeddings
+    embeddings = []
+    def embedding_hook(module, input, output):
+        embeddings.append(output.detach().cpu().numpy())
+
+    handle = feature_extractor.register_forward_hook(embedding_hook)
+
+    try:
+        with torch.no_grad():
+            for batch_idx, (images, labels) in enumerate(data_loader):
+                images = images.to(device)
+                labels = labels.float().to(device).view(-1, 1)
+
+                # Get predictions (logits -> probabilities)
+                logits = model(images)
+                probs = torch.sigmoid(logits).cpu().numpy().flatten()
+                preds = (probs >= threshold).astype(int)
+
+                # Compute image statistics (per channel)
+                batch_mean = images.mean(dim=(0, 2, 3)).cpu().numpy()
+                batch_std = images.std(dim=(0, 2, 3)).cpu().numpy()
+
+                image_means.append(batch_mean)
+                image_stds.append(batch_std)
+
+                # Update class counts
+                for label in labels.cpu().numpy().flatten():
+                    class_counts[int(label)] += 1
+
+                # Update prediction counts
+                for pred in preds:
+                    prediction_counts[int(pred)] += 1
+
+                # Collect confidences
+                confidences.extend(probs)
+
+                # Get embeddings from the hook
+                if embeddings:
+                    all_embeddings.extend([e for e in embeddings])
+                    embeddings.clear()
+
+        # Compute final statistics
+        image_means = np.array(image_means)
+        image_stds = np.array(image_stds)
+
+        baseline_stats = {
+            'image_statistics': {
+                'mean_r': float(np.mean(image_means[:, 0])),
+                'mean_g': float(np.mean(image_means[:, 1])),
+                'mean_b': float(np.mean(image_means[:, 2])),
+                'std_r': float(np.mean(image_stds[:, 0])),
+                'std_g': float(np.mean(image_stds[:, 1])),
+                'std_b': float(np.mean(image_stds[:, 2])),
+            },
+            'class_distribution': {
+                'class_0_count': class_counts[0],
+                'class_1_count': class_counts[1],
+                'total': class_counts[0] + class_counts[1],
+            },
+            'prediction_distribution': {
+                'pred_0_count': prediction_counts[0],
+                'pred_1_count': prediction_counts[1],
+                'total': prediction_counts[0] + prediction_counts[1],
+            },
+            'confidence_statistics': {
+                'mean': float(np.mean(confidences)),
+                'std': float(np.std(confidences)),
+                'min': float(np.min(confidences)),
+                'max': float(np.max(confidences)),
+            },
+            'embedding_statistics': {
+                'mean': [],
+                'std': [],
+            },
+        }
+
+        # Compute embedding statistics if embeddings were captured
+        if all_embeddings:
+            all_embeddings_array = np.concatenate(all_embeddings, axis=0)
+            embedding_mean = np.mean(all_embeddings_array, axis=0)
+            embedding_std = np.std(all_embeddings_array, axis=0)
+            baseline_stats['embedding_statistics'] = {
+                'mean': embedding_mean.tolist(),
+                'std': embedding_std.tolist(),
+                'shape': int(all_embeddings_array.shape[1]),
+            }
+
+        print(f"Baseline statistics computed:")
+        print(f"  Class distribution: 0={class_counts[0]}, 1={class_counts[1]}")
+        print(f"  Confidence mean: {baseline_stats['confidence_statistics']['mean']:.4f}")
+        if all_embeddings:
+            print(f"  Embedding shape: {baseline_stats['embedding_statistics']['shape']}")
+
+        return baseline_stats
+
+    finally:
+        handle.remove()
+
+
+class SimpleLoggingWrapper(mlflow.pyfunc.PythonModel):
+    """Wrapper that logs inference requests and returns predictions."""
+
+    def __init__(self, model=None, model_path=None, log_path=Path(inference_log_path), threshold=threshold):
+        self.model = model
+        self.model_path = model_path
+        self.log_path = Path(log_path)
+        self.threshold = threshold
+
+        # Transform for preprocessing images (same as training, no augmentation)
+        self.transform = transforms.Compose([
+            transforms.Resize(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=transform_mean, std=transform_std),
+        ])
+
+        # Device for inference
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Ensure log directory exists
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def get_raw_model(self):
+        """Return the underlying PyTorch model for direct access."""
+        return self.model
+
+    def load_context(self, context):
+        """Called by MLflow when the model is loaded. Nothing to do when the
+        model was pickled together with the wrapper."""
+        print("Loading SimpleLoggingWrapper context...")
+        if self.model is None:
+            if self.model_path and Path(self.model_path).exists():
+                checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=False)
+                self.model = self._create_model_from_checkpoint(checkpoint)
+            else:
+                raise FileNotFoundError("Could not find model file")
+        self.model.to(self.device)
+        self.model.eval()
+        print("SimpleLoggingWrapper context loaded successfully!")
+
+    def _create_model_from_checkpoint(self, checkpoint):
+        architecture = checkpoint.get('architecture', 'SimpleCNN')
+        if architecture == 'SimpleCNN':
+            model = SimpleCNN()
+        else:
+            raise ValueError(f"Unknown architecture: {architecture}")
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
+        return model
+
+    def _get_timestamp_iso(self):
+        return datetime.now(timezone.utc).isoformat()
+
+    def _log_request(self, request_data):
+        """Append a request log entry to the JSON log file."""
+        try:
+            logs = []
+            if self.log_path.exists():
+                with open(self.log_path, 'r') as f:
+                    try:
+                        logs = json.load(f)
+                        if not isinstance(logs, list):
+                            logs = []
+                    except json.JSONDecodeError:
+                        logs = []
+
+            logs.append(request_data)
+
+            with open(self.log_path, 'w') as f:
+                json.dump(logs, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Failed to log request: {e}")
+
+    def preprocess_image(self, image_input):
+        """Preprocess a single image: path, raw bytes or base64 string."""
+        if isinstance(image_input, bytes):
+            image = Image.open(BytesIO(image_input)).convert('RGB')
+        elif isinstance(image_input, str):
+            path = None
+            try:
+                candidate = Path(image_input)
+                if candidate.exists():
+                    path = candidate
+            except OSError:
+                path = None
+            if path is not None:
+                image = Image.open(path).convert('RGB')
+            else:
+                # Treat as base64-encoded image data (the portable contract
+                # for containerized serving)
+                try:
+                    decoded_bytes = base64.b64decode(image_input)
+                    image = Image.open(BytesIO(decoded_bytes)).convert('RGB')
+                except Exception as e:
+                    raise ValueError(
+                        f"Cannot process string input '{image_input[:50]}...': "
+                        f"not an existing file path and not valid base64 image data: {e}"
+                    )
+        elif isinstance(image_input, Path):
+            if image_input.exists():
+                image = Image.open(image_input).convert('RGB')
+            else:
+                raise FileNotFoundError(f"File not found: {image_input}")
+        else:
+            raise TypeError(f"Unsupported image input type: {type(image_input)}. Expected str, Path, or bytes.")
+
+        return self.transform(image).unsqueeze(0)
+
+    def predict(self, context, model_input):
+        """Make predictions on input data and log the request."""
+        if self.model is None:
+            self.load_context(context)
+
+        # Handle different input formats
+        if isinstance(model_input, dict):
+            if 'instances' in model_input:
+                image_inputs = model_input['instances']
+            elif 'data' in model_input:
+                image_inputs = model_input['data']
+            else:
+                # Try to extract inputs from any key
+                for key, value in model_input.items():
+                    if isinstance(value, (list, str, np.ndarray, bytes)) or isinstance(value, Path):
+                        image_inputs = [value] if isinstance(value, (str, Path, np.ndarray, bytes)) else value
+                        break
+                else:
+                    raise ValueError(f"Could not extract image inputs from input: {model_input}")
+        elif isinstance(model_input, (list, tuple, np.ndarray)):
+            image_inputs = model_input
+        else:
+            image_inputs = [model_input]
+
+        if isinstance(image_inputs, np.ndarray):
+            image_inputs = image_inputs.tolist()
+
+        # Convert to flat list of inputs
+        image_inputs_list = []
+        for item in image_inputs:
+            if isinstance(item, (list, tuple)):
+                image_inputs_list.extend(item)
+            else:
+                image_inputs_list.append(item)
+        image_inputs = image_inputs_list
+
+        predictions = []
+        confidences = []
+        raw_outputs = []
+
+        timestamp = self._get_timestamp_iso()
+
+        for image_input in image_inputs:
+            try:
+                image_tensor = self.preprocess_image(image_input)
+                image_tensor = image_tensor.to(self.device)
+
+                with torch.no_grad():
+                    logit = self.model(image_tensor)
+                    prob = torch.sigmoid(logit).item()
+                    pred = 1 if prob >= self.threshold else 0
+
+                predictions.append(int(pred))
+                confidences.append(round(float(prob), 4))
+                raw_outputs.append(round(float(prob), 4))
+
+                image_identifier = "<bytes>" if isinstance(image_input, bytes) else str(image_input)
+                log_entry = {
+                    'timestamp': timestamp,
+                    'image_path': image_identifier,
+                    'prediction': int(pred),
+                    'confidence': float(prob),
+                    'raw_output': float(prob),
+                }
+                self._log_request(log_entry)
+
+            except Exception as e:
+                print(f"Error processing image {image_input}: {e}")
+                predictions.append(None)
+                confidences.append(None)
+                raw_outputs.append(None)
+
+        return {
+            'predictions': predictions,
+            'confidences': confidences,
+            'raw_outputs': raw_outputs,
+            'num_samples': len(image_inputs),
+        }
+
+
+def wait_until_ready(model_name, model_version, max_attempts=10):
+    """Wait until the model version is READY in the registry."""
+    client = MlflowClient()
+    for attempt in range(max_attempts):
+        try:
+            model_version_details = client.get_model_version(name=model_name, version=model_version)
+            status = ModelVersionStatus.from_string(model_version_details.status)
+            print(f"Model status: {ModelVersionStatus.to_string(status)}")
+            if status == ModelVersionStatus.READY:
+                print(f"Model {model_name} version {model_version} is READY")
+                return True
+        except Exception as e:
+            print(f"Error checking model status (attempt {attempt + 1}/{max_attempts}): {e}")
+        time.sleep(1)
+    print(f"Model {model_name} version {model_version} did not become READY after {max_attempts} attempts")
+    return False
 # FUNCTIONS END
 
 if __name__ == "__main__":
