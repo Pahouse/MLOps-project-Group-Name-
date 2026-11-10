@@ -997,4 +997,91 @@ def wait_until_ready(model_name, model_version, max_attempts=10):
 # FUNCTIONS END
 
 if __name__ == "__main__":
-    pass
+    # --------------------------------------
+    # Configuration
+    # --------------------------------------
+    max_date = "2024-01-31"
+    min_date = "2024-01-01"
+
+    # Training configuration
+    num_epochs = 5
+    batch_size = 32
+    learning_rate = 0.0003
+    threshold = 0.5
+    early_stop_patience = 2
+    scheduler_patience = 3
+    random_state = 42
+
+    # Image specifications
+    image_size = (64, 64)
+    original_image_size = (1600, 768)
+    num_classes = 2
+    transform_mean = [0.485, 0.456, 0.406]
+    transform_std = [0.229, 0.224, 0.225]
+
+    # Paths (relative to the project root)
+    artifact_dir = "artifacts"
+    mlflow_state_dir = "mlflow-state"
+    image_data_dir = "./data/images/raw"
+    metadata_path = "./data/images/metadata.csv"
+    test_data_dir = "./data/test"
+    pytorch_model_path = artifact_dir + "/vial_cnn_model.pth"
+    model_results_path = artifact_dir + "/model_results.json"
+    drift_baseline_stats_path = artifact_dir + "/drift_baseline_stats.json"
+    class_names_path = artifact_dir + "/class_names.json"
+    image_statistics_path = artifact_dir + "/image_statistics.json"
+    inference_log_path = artifact_dir + "/inference_log.json"
+
+    # MLflow - we log to a local sqlite db so no tracking server has to be running
+    experiment_name = "vial_image_classification"
+    model_name = "cnn_model"
+    mlflow_tracking_uri = f"sqlite:///{mlflow_state_dir}/mlflow.db"
+    mlflow_artifact_location = "./mlflow-state/artifacts"
+
+    print("Configuration loaded")
+    
+    # --------------------------------------
+    # Create artifact directory
+    # --------------------------------------
+    if os.path.basename(os.getcwd()) == "notebooks":
+        os.chdir("..")
+
+    os.makedirs("artifacts", exist_ok=True)
+    os.makedirs("mlflow-state", exist_ok=True)
+    os.makedirs("mlflow-state/artifacts", exist_ok=True)
+    os.makedirs("data/images/raw", exist_ok=True)
+    print("Created artifacts directory")
+    
+    # --------------------------------------
+    # Pandas dataframe print options
+    # --------------------------------------
+    warnings.filterwarnings('ignore')
+    pd.set_option('display.float_format', lambda x: "%.3f" % x)
+    
+    # --------------------------------------
+    # MLflow setup
+    # --------------------------------------
+    setup_mlflow_tracking(experiment_name)
+    print("MLflow tracking URI:", mlflow.get_tracking_uri())
+    
+    # --------------------------------------
+    # Read data
+    # --------------------------------------
+    BASE_URL = "https://itudsip.hel1.your-objectstorage.com/data"
+
+    # S3 Configuration for Hetzner
+    S3_ENDPOINT = "https://itudsip.hel1.your-objectstorage.com"
+    S3_BUCKET = "data"
+    
+    # v -----------ERROR----------- v
+    # !dvc pull 
+    # ^ -----------ERROR----------- ^
+    pull_data_from_dvc()
+    
+    # --------------------------------------
+    # Load dataset
+    # --------------------------------------
+    image_dataset = load_image_dataset()
+    # display(pd.read_csv(metadata_path).head(5)) # PROBABLY NOT NECESSARY
+    
+    
