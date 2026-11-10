@@ -29,13 +29,14 @@ func (m *Pipeline) Env(
 		WithExec([]string{"pip", "install", "--no-deps", "-e", "."})
 }
 
-// Train runs the training script and returns the trained model file
+// Train runs the training script and returns the artifacts directory
+// (vial_cnn_model.pth, model_results.json, drift/class/image stats JSONs)
 func (m *Pipeline) Train(
 	// +defaultPath="/"
-	// +ignore=[".git", ".venv", "**/__pycache__", "dagger"]
+	// +ignore=[".git", ".venv", "**/__pycache__", "dagger", "artifacts", "mlflow-state", "models"]
 	source *dagger.Directory,
-) *dagger.File {
+) *dagger.Directory {
 	return m.Env(source).
 		WithExec([]string{"python", "./source/training.py"}).
-		File("/app/models/model.pkl")
+		Directory("/app/artifacts")
 }
