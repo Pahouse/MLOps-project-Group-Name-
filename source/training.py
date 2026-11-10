@@ -1084,4 +1084,37 @@ if __name__ == "__main__":
     image_dataset = load_image_dataset()
     # display(pd.read_csv(metadata_path).head(5)) # PROBABLY NOT NECESSARY
     
+    # --------------------------------------
+    # Exploratory analysis
+    # --------------------------------------
+    labels = [label for _, label in image_dataset]
+    class_dist = count_classes(labels)
+    print("Class distribution:")
+    for cls, count in class_dist.items():
+        print(f"  Class {cls}: {count} images ({count/len(labels)*100:.1f}%)")
+
+    metadata_df = pd.read_csv(metadata_path)
+    print("\nImages per class name:")
+    print(metadata_df["class_name"].value_counts())
     
+    # --------------------------------------
+    # Feature artifacts
+    # --------------------------------------
+    class_names = {0: "good", 1: "defective"}
+    with open(class_names_path, "w") as f:
+        json.dump(class_names, f, indent=2)
+    print(f"Class names saved to {class_names_path}")
+    
+    # --------------------------------------
+    # Data preprocessing
+    # --------------------------------------
+    train_transforms, val_transforms = define_transforms()
+    
+    train_dataset, val_dataset, test_dataset = split_dataset(image_dataset)
+    train_loader, val_loader, test_loader = create_dataloaders(train_dataset, val_dataset, test_dataset)
+
+    # Save the image statistics of the training set as an artifact
+    image_stats = calculate_image_statistics(train_loader)
+    with open(image_statistics_path, "w") as f:
+        json.dump(image_stats, f, indent=2)
+    print(f"Image statistics saved to {image_statistics_path}")
