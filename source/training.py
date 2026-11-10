@@ -1074,7 +1074,7 @@ if __name__ == "__main__":
     S3_BUCKET = "data"
     
     # v -----------ERROR----------- v
-    !dvc pull 
+    # !dvc pull 
     # ^ -----------ERROR----------- ^
     pull_data_from_dvc()
     
