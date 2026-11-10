@@ -1,6 +1,5 @@
 //PLACEHOLDER FUNCTION UNTIL WE SORT THE NOTEBOOK FILES INTO PYTHON ONES
 
-
 package main
 
 import (
@@ -17,10 +16,17 @@ func (m *Pipeline) Env(
 ) *dagger.Container {
 	return dag.Container().
 		From("python:3.10-slim").
-		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip-cache")). // faster re-runs
-		WithDirectory("/app", source).
+		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip-cache")). // reuse downloaded wheels
+		// CPU-only torch wheels: much smaller than the default CUDA build
+		WithEnvVariable("PIP_EXTRA_INDEX_URL", "https://download.pytorch.org/whl/cpu").
 		WithWorkdir("/app").
-		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
+		// Copy ONLY requirements.txt first, so this install step stays cached
+		// until requirements.txt itself changes (code edits won't trigger a reinstall).
+		WithFile("/app/requirements.txt", source.File("requirements.txt")).
+		WithExec([]string{"sh", "-c", "grep -v '^-e' requirements.txt > /tmp/req.txt && pip install -r /tmp/req.txt"}).
+		// Now bring in the rest of the code; only this cheap step reruns on code changes
+		WithDirectory("/app", source).
+		WithExec([]string{"pip", "install", "--no-deps", "-e", "."})
 }
 
 // Train runs the training script and returns the trained model file
@@ -30,6 +36,6 @@ func (m *Pipeline) Train(
 	source *dagger.Directory,
 ) *dagger.File {
 	return m.Env(source).
-		WithExec([]string{"python", "./models/placeholder_train.py"}).
+		WithExec([]string{"python", "./source/training.py"}).
 		File("/app/models/model.pkl")
 }

@@ -8,4 +8,9 @@ pip
 python-dotenv
 ruff
 scikit-learn
+mlflow
+torch
+torchvision
+pillow
+boto3
 -e .
