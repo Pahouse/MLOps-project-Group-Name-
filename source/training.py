@@ -41,6 +41,49 @@ from botocore.config import Config
 from botocore import UNSIGNED
 # IMPORTS END
 
+# CONFIG START
+max_date = "2024-01-31"
+min_date = "2024-01-01"
+
+# Training configuration
+num_epochs = 5
+batch_size = 32
+learning_rate = 0.0003
+threshold = 0.5
+early_stop_patience = 2
+scheduler_patience = 3
+random_state = 42
+
+# Image specifications
+image_size = (64, 64)
+original_image_size = (1600, 768)
+num_classes = 2
+transform_mean = [0.485, 0.456, 0.406]
+transform_std = [0.229, 0.224, 0.225]
+
+# Paths (relative to the project root)
+artifact_dir = "artifacts"
+mlflow_state_dir = "mlflow-state"
+image_data_dir = "./data/images/raw"
+metadata_path = "./data/images/metadata.csv"
+test_data_dir = "./data/test"
+pytorch_model_path = artifact_dir + "/vial_cnn_model.pth"
+model_results_path = artifact_dir + "/model_results.json"
+drift_baseline_stats_path = artifact_dir + "/drift_baseline_stats.json"
+class_names_path = artifact_dir + "/class_names.json"
+image_statistics_path = artifact_dir + "/image_statistics.json"
+inference_log_path = artifact_dir + "/inference_log.json"
+
+# MLflow - we log to a local sqlite db so no tracking server has to be running
+experiment_name = "vial_image_classification"
+model_name = "cnn_model"
+mlflow_tracking_uri = f"sqlite:///{mlflow_state_dir}/mlflow.db"
+mlflow_artifact_location = "./mlflow-state/artifacts"
+print("Configuration loaded")
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Device:", device)
+# CONFIG END
 
 # CLASSES START
 class GlassVialDataset(Dataset):
@@ -998,49 +1041,6 @@ def wait_until_ready(model_name, model_version, max_attempts=10):
 
 if __name__ == "__main__":
     # --------------------------------------
-    # Configuration
-    # --------------------------------------
-    max_date = "2024-01-31"
-    min_date = "2024-01-01"
-
-    # Training configuration
-    num_epochs = 5
-    batch_size = 32
-    learning_rate = 0.0003
-    threshold = 0.5
-    early_stop_patience = 2
-    scheduler_patience = 3
-    random_state = 42
-
-    # Image specifications
-    image_size = (64, 64)
-    original_image_size = (1600, 768)
-    num_classes = 2
-    transform_mean = [0.485, 0.456, 0.406]
-    transform_std = [0.229, 0.224, 0.225]
-
-    # Paths (relative to the project root)
-    artifact_dir = "artifacts"
-    mlflow_state_dir = "mlflow-state"
-    image_data_dir = "./data/images/raw"
-    metadata_path = "./data/images/metadata.csv"
-    test_data_dir = "./data/test"
-    pytorch_model_path = artifact_dir + "/vial_cnn_model.pth"
-    model_results_path = artifact_dir + "/model_results.json"
-    drift_baseline_stats_path = artifact_dir + "/drift_baseline_stats.json"
-    class_names_path = artifact_dir + "/class_names.json"
-    image_statistics_path = artifact_dir + "/image_statistics.json"
-    inference_log_path = artifact_dir + "/inference_log.json"
-
-    # MLflow - we log to a local sqlite db so no tracking server has to be running
-    experiment_name = "vial_image_classification"
-    model_name = "cnn_model"
-    mlflow_tracking_uri = f"sqlite:///{mlflow_state_dir}/mlflow.db"
-    mlflow_artifact_location = "./mlflow-state/artifacts"
-
-    print("Configuration loaded")
-    
-    # --------------------------------------
     # Create artifact directory
     # --------------------------------------
     if os.path.basename(os.getcwd()) == "notebooks":
@@ -1074,7 +1074,7 @@ if __name__ == "__main__":
     S3_BUCKET = "data"
     
     # v -----------ERROR----------- v
-    # !dvc pull 
+    !dvc pull 
     # ^ -----------ERROR----------- ^
     pull_data_from_dvc()
     
@@ -1118,12 +1118,6 @@ if __name__ == "__main__":
     with open(image_statistics_path, "w") as f:
         json.dump(image_stats, f, indent=2)
     print(f"Image statistics saved to {image_statistics_path}")
-    
-    # --------------------------------------
-    # Model training
-    # --------------------------------------
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Device:", device)
     
     # --------------------------------------
     # Run training
