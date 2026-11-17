@@ -84,9 +84,9 @@ func (m *Pipeline) Publish(
 	ref := fmt.Sprintf("ghcr.io/%s/model-serve:%s", strings.ToLower(owner), tag)
 	return m.Env(source).
 		WithDirectory("/app/models/model", m.Deploy(source)).
+		WithDirectory("/app/artifacts", m.Train(source)). // baseline stats for /drift (training is cached)
 		WithExposedPort(5001).
-		// TODO: replace with YOUR real serving command (must listen on 0.0.0.0:5001)
-		WithEntrypoint([]string{"uvicorn", "source.serve:app", "--host", "0.0.0.0", "--port", "5001"}).
+		WithEntrypoint([]string{"python", "source/serve.py"}).
 		WithRegistryAuth("ghcr.io", ghUser, ghToken).
 		Publish(ctx, ref)
 }
